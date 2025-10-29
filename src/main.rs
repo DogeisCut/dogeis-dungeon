@@ -1,4 +1,5 @@
 use std::io;
+use std::any::Any;
 
 struct Health {
     pub value: i32,
@@ -20,6 +21,8 @@ struct Player {
 
 trait Entity {
     // Used when describing what is in the room.
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn get_description(&self) -> String;
     fn get_interaction(&mut self, interaction: InteractionType) -> Option<String>;
 }
@@ -58,10 +61,9 @@ impl Item {
             ItemType::HealthPotion(healing_power) => todo!(),
         }
     }
-}
-impl Entity for Item {
-    fn get_description(&self) -> String {
-        String::from(match &self.item_type {
+    // just found out you can impl enums.. might want to move this code there instead as well for future type enums!!
+    fn describe(item_type: &ItemType) -> String {
+        String::from(match &item_type {
             ItemType::RedKey => "A red key",
             ItemType::BlueKey => "A blue key",
             ItemType::GreenKey => "A green key",
@@ -72,6 +74,14 @@ impl Entity for Item {
                 "A health potion"
             },
         })
+    }
+}
+impl Entity for Item {
+    fn as_any(&self) -> &dyn Any { self }
+	fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn get_description(&self) -> String {
+        Item::describe(&self.item_type)
     }
     
     fn get_interaction(&mut self, interaction: InteractionType) -> Option<String> {
@@ -106,6 +116,9 @@ impl Weapon {
 
 }
 impl Entity for Weapon {
+    fn as_any(&self) -> &dyn Any { self }
+	fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
     fn get_description(&self) -> String {
         match &self.weapon_type {
             WeaponTypes::Shortsword(weapon_quality) => todo!(),
@@ -147,6 +160,9 @@ impl Enemy {
     }
 }
 impl Entity for Enemy {
+    fn as_any(&self) -> &dyn Any { self }
+	fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
     fn get_description(&self) -> String {
         let mut result = String::from("A kobald (");
         result += &self.health.value.to_string();
@@ -180,7 +196,7 @@ enum ExitType {
     Open,
     Hallway,
     Door,
-    LockedDoor(ItemType),
+    LockedDoor(ItemType, bool),
     Staircase
 }
 
@@ -196,9 +212,61 @@ struct Room {
     pub title: String,
     pub description: String,
     pub exits: Vec<Directions>,
-    pub contents: Vec<Box<dyn Entity>>
+    pub contents: Vec<Box<dyn Entity>>,
+    x: usize,
+    y: usize
 }
-
+impl Room {
+    fn describe_exit_type(exit_type: &ExitType) -> String {
+        match exit_type {
+            ExitType::Open => "Another part of the room".into(),
+            ExitType::Hallway => "A hallway".into(),
+            ExitType::Door => "A door".into(),
+            ExitType::LockedDoor(item_type, mystery) => {
+                if !!mystery {
+                    "A mysterious locked door".into()
+                } else {
+                    format!("A locked door with {} shaped slot", Item::describe(&item_type))
+                }
+            },
+            ExitType::Staircase => "A starcase leading".into(),
+        }
+    }
+    fn describe(&self) -> String {
+        let mut contents = String::from("");
+        let mut exits = String::from("");
+        let mut direction_index: usize = 0;
+        for direction in &self.exits {
+            direction_index += 1;
+            exits += &(format!("{}. {}\n", direction_index, match direction {
+                Directions::Up(exit_type) => Room::describe_exit_type(exit_type) + " towards the top.",
+                Directions::Down(exit_type) => Room::describe_exit_type(exit_type) + " towards the floor.",
+                Directions::North(exit_type) => Room::describe_exit_type(exit_type) + " to the north.",
+                Directions::East(exit_type) => Room::describe_exit_type(exit_type) + " to the east.",
+                Directions::South(exit_type) => Room::describe_exit_type(exit_type) + " to the south.",
+                Directions::West(exit_type) => Room::describe_exit_type(exit_type) + " to the west.",
+            }))
+        }
+        let mut entity_index: usize = 0;
+        for entity in &self.contents {
+            entity_index += 1;
+            contents += &(format!("{}. {}\n", entity_index, entity.get_description()));
+        }
+        let result = format!(
+            "{} ({}, {})
+            
+            {}
+            
+            Contents:
+            {}
+            
+            Exits:
+            {}",
+        &self.title, &self.x, &self.y, &self.description, contents, exits);
+        return result
+    }
+}
+ 
 fn main() {
     let player = Player { health: Health{value: 32, max: 32}, current_weapon: Weapon{weapon_type: WeaponTypes::Shortsword(WeaponQuality::Poor)}, inventory: vec![], x: 0, y: 0};
     let mut world: Vec<Vec<Room>> = (0..10)
@@ -208,10 +276,12 @@ fn main() {
     for y in 0..10 {
         for x in 0..10 {
             world[y].push(Room {
-                title: format!("Room {},{}", x, y),
+                title: format!("Dusty Chamber"),
                 description: "A dusty chamber.".into(),
                 exits: vec![],
                 contents: vec![],
+                x: x,
+                y: y
             });
         }
     }
@@ -256,13 +326,25 @@ fn handle_action(action: Actions) {
     }
 }
 
-fn parse_command(input: &str) -> Option<Actions> {
+fn parse_command(input: &str, room: &Room) -> Option<Actions> {
     let words: Vec<&str> = input.trim().split_whitespace().collect();
 	if words.is_empty() {
 		return None;
 	}
+    if words[1].parse::<usize>().is_err() {
+        return None;
+    }
+    let chosen_index: usize = words[1].parse().unwrap();
+    if chosen_index < 0 {
+        return None;
+    }
 
     match words[0] {
+        "fight" => if let Some(enemy) = room.contents[chosen_index - 1].as_any().downcast_mut::<Enemy>() {
+                Some(Actions::Fight(enemy))
+            } else {
+                None
+            },
         "debug" => Some(Actions::Debug),
         _ => None,
     }
