@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::io;
 use std::any::Any;
 
@@ -8,6 +9,16 @@ struct Health {
 impl Health {
     fn hurt(&mut self, amount: i32) {
         self.value -= amount;
+    }
+}
+
+struct Description {
+    pub single: String,
+    pub plural: String
+}
+impl Description {
+    pub fn from_str_single(single: &str) -> Description {
+        Description { single: single.into(), plural: single.into() }
     }
 }
 
@@ -36,6 +47,27 @@ enum ItemType {
     YellowKey,
     PurpleKey,
     HealthPotion(i32)
+}
+impl ItemType {
+    pub fn describe(self, player: &Player) -> String {
+        match self {
+            ItemType::RedKey => "Red Key".into(),
+            ItemType::BlueKey => "Blue Key".into(),
+            ItemType::GreenKey => "Green Key".into(),
+            ItemType::YellowKey => "Yellow Key".into(),
+            ItemType::PurpleKey => "Purple Key".into(),
+            ItemType::HealthPotion(healing_power) => format!("{}Health Potion", 
+            if healing_power >= player.health.max {
+                "Super"
+            } else if healing_power >= player.health.max / 2 {
+                "Strong"
+            } else if healing_power >= player.health.max / 4 {
+                ""
+            } else {
+                "Weak"
+            }),
+        }
+    }
 }
 struct Item{
     item_type: ItemType
@@ -300,33 +332,36 @@ enum InteractionType {
     Store,
     Flirt
 }
-enum Actions {
-    Fight(Enemy), 
+enum Actions<'a> {
+    Fight(&'a mut Enemy), 
     Move(Directions),
-    Interact(Box<dyn Entity>),
-    Drop(Box<dyn Storable>),
+    Interact(&'a mut dyn Entity),
+    Use(&'a mut Item),
+    Drop(&'a mut dyn Storable),
     Equip(Weapon),
     Debug
 }
 
-enum BattleActions {
+enum BattleActions<'a> {
     Attack,
     Defend,
-    Use(Item)
+    Use(&'a mut Item),
+    Drop(&'a mut dyn Storable)
 }
 
-fn handle_action(action: Actions) {
+fn handle_action<'a>(action: Actions<'a>) {
     match action {
         Actions::Fight(enemy) => todo!(),
         Actions::Move(directions) => todo!(),
         Actions::Interact(entity) => todo!(),
+        Actions::Use(item) => todo!(),
         Actions::Drop(storable) => todo!(),
         Actions::Equip(weapon) => todo!(),
         Actions::Debug => todo!(),
     }
 }
 
-fn parse_command(input: &str, room: &Room) -> Option<Actions> {
+fn parse_command<'a>(input: &'a str, room: &'a mut Room) -> Option<Actions<'a>> {
     let words: Vec<&str> = input.trim().split_whitespace().collect();
 	if words.is_empty() {
 		return None;
@@ -335,16 +370,18 @@ fn parse_command(input: &str, room: &Room) -> Option<Actions> {
         return None;
     }
     let chosen_index: usize = words[1].parse().unwrap();
-    if chosen_index < 0 {
-        return None;
-    }
 
     match words[0] {
-        "fight" => if let Some(enemy) = room.contents[chosen_index - 1].as_any().downcast_mut::<Enemy>() {
+        "fight" | "f" | "1" => if let Some(enemy) = room.contents[chosen_index - 1].as_any_mut().downcast_mut::<Enemy>() {
                 Some(Actions::Fight(enemy))
             } else {
                 None
             },
+        "move" | "m" | "2" => todo!(),
+        "interact" | "i" | "3" => todo!(),
+        "use" | "u" | "4" => todo!(),
+        "drop" | "d" | "5" => todo!(),
+        "equip" | "e" | "6" => todo!(),
         "debug" => Some(Actions::Debug),
         _ => None,
     }
